@@ -13,7 +13,7 @@ find_path(LLD_INCLUDE_DIRS NAMES lld/Common/Driver.h
         /usr/local/llvm11/include
         /mingw64/include)
 
-find_library(LLD_LIBRARY NAMES lld-11.0 lld110 lld
+find_library(LLD_LIBRARY NAMES lld-11.0 lld110 lld11 lld
     PATHS
         /usr/lib/llvm-11/lib
         /usr/local/llvm110/lib
