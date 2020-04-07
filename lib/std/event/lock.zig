@@ -129,9 +129,6 @@ test "std.event.Lock" {
     // TODO https://github.com/ziglang/zig/issues/1908
     if (builtin.single_threaded) return error.SkipZigTest;
 
-    // TODO https://github.com/ziglang/zig/issues/3251
-    if (builtin.os.tag == .freebsd) return error.SkipZigTest;
-
     var lock = Lock{};
     testLock(&lock);
 

@@ -294,9 +294,9 @@ pub const Loop = struct {
                         .next = undefined,
                     };
                     self.available_eventfd_resume_nodes.push(eventfd_node);
-                    const kevent_array = @as(*const [1]os.Kevent, &eventfd_node.data.kevent);
+                    const kevent_array: []os.Kevent = &[_]os.Kevent{eventfd_node.data.kevent};
                     _ = try os.kevent(self.os_data.kqfd, kevent_array, empty_kevs, null);
-                    eventfd_node.data.kevent.flags = os.EV_CLEAR | os.EV_ENABLE;
+                    eventfd_node.data.kevent.flags = os.EV_ENABLE;
                     eventfd_node.data.kevent.fflags = os.NOTE_TRIGGER;
                 }
 
@@ -310,7 +310,7 @@ pub const Loop = struct {
                     .data = 0,
                     .udata = @ptrToInt(&self.final_resume_node),
                 };
-                const final_kev_arr = @as(*const [1]os.Kevent, &self.os_data.final_kevent);
+                const final_kev_arr: []os.Kevent = &[_]os.Kevent{self.os_data.final_kevent};
                 _ = try os.kevent(self.os_data.kqfd, final_kev_arr, empty_kevs, null);
                 self.os_data.final_kevent.flags = os.EV_ENABLE;
                 self.os_data.final_kevent.fflags = os.NOTE_TRIGGER;

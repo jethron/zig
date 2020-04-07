@@ -127,9 +127,6 @@ test "std.event.Group" {
 
     if (!std.io.is_async) return error.SkipZigTest;
 
-    // TODO this file has bit-rotted. repair it
-    if (true) return error.SkipZigTest;
-
     const handle = async testGroup(std.heap.page_allocator);
 }
 fn testGroup(allocator: *Allocator) callconv(.Async) void {
