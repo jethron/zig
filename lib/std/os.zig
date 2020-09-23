@@ -1029,13 +1029,13 @@ pub const OpenError = error{
     PathAlreadyExists,
     DeviceBusy,
 
+    WouldBlock,
+
     /// The underlying filesystem does not support file locks
     FileLocksNotSupported,
 
     BadPathName,
     InvalidUtf8,
-
-    WouldBlock,
 } || UnexpectedError;
 
 /// Open and possibly create a file. Keeps trying if it gets interrupted.
