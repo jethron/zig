@@ -4270,7 +4270,7 @@ pub fn realpathW(pathname: []const u16, out_buffer: *[MAX_PATH_BYTES]u8) RealPat
 /// Return canonical path of handle `fd`.
 /// This function is very host-specific and is not universally supported by all hosts.
 /// For example, while it generally works on Linux, macOS or Windows, it is unsupported
-/// on FreeBSD, or WASI.
+/// on WASI. FreeBSD has an inefficient alternative.
 pub fn getFdPath(fd: fd_t, out_buffer: *[MAX_PATH_BYTES]u8) RealPathError![]u8 {
     switch (builtin.os.tag) {
         .windows => {
@@ -4294,6 +4294,70 @@ pub fn getFdPath(fd: fd_t, out_buffer: *[MAX_PATH_BYTES]u8) RealPathError![]u8 {
             }
             const len = mem.indexOfScalar(u8, out_buffer[0..], @as(u8, 0)) orelse MAX_PATH_BYTES;
             return out_buffer[0..len];
+        },
+        .freebsd => {
+            const pid = @intCast(c_int, system.getpid());
+
+            var mib = [_]c_int{ 0, 0, 0, pid };
+            var miblen = mib.len;
+            // Pending https://bugs.freebsd.org/bugzilla/show_bug.cgi?id=198570
+            // or similar, there's not a good way to get this in FreeBSD.
+            // Instead, list all open files for the process and find the FD we're looking for.
+            switch (errno(system.sysctlnametomib("kern.proc.filedesc", &mib[0], &miblen))) {
+                0 => {},
+                EFAULT => unreachable, // stack is always a valid address
+                EINVAL => unreachable, // known good name
+                ENOMEM => unreachable, // known size, on the stack
+                EPERM => unreachable, // not setting new value
+                ENOENT => return error.NotSupported,
+                else => |err| return unexpectedErrno(err),
+            }
+
+            // If the buffer is too small, sysctl silently gives partial result,
+            // which may not contain our target FD.
+            // Get the approximate required size by using null for oldp/buf.
+            // Use that to change the error produced if we can't find the FD.
+            // TODO: Do this better with an allocator, alloca or stupidly large array?
+            var buflen: usize = 0;
+            sysctl(&mib, null, &buflen, null, 0) catch |err| switch (err) {
+                error.PermissionDenied => unreachable, // not setting value
+                error.NameTooLong => unreachable, // known good mib from sysctlnametomib
+                error.UnknownName => unreachable, // known good mib from sysctlnametomib
+                error.Unexpected, error.SystemResources => |e| return e, // EINVAL/EISDIR/ENOTDIR should be unreachable
+            };
+
+            // 20 is completely arbitrary, will work for at least this many open descriptors;
+            // More depending on path length.
+            var buf: [@sizeOf(system.kinfo_file) * 20]u8 = undefined;
+
+            // If the buffer size required is larger than above, try with the partial result.
+            // If unsuccessful, signal it's a resource constraint rather than not finding the FD.
+            const result_error: RealPathError = if (buflen > buf.len) error.SystemResources else error.FileNotFound;
+
+            buflen = buf.len;
+
+            sysctl(&mib, &buf, &buflen, null, 0) catch |err| switch (err) {
+                error.PermissionDenied => unreachable, // not setting value
+                error.NameTooLong => unreachable, // known good mib from sysctlnametomib
+                error.UnknownName => unreachable, // known good mib from sysctlnametomib
+                error.Unexpected, error.SystemResources => |e| return e, // EINVAL/EISDIR/ENOTDIR should be unreachable
+            };
+
+            var offset: usize = 0;
+            while (offset < buflen) {
+                const kf = @ptrCast(*system.kinfo_file, @alignCast(@alignOf(*system.kinfo_file), &buf[offset]));
+                if (kf.kf_fd == fd) {
+                    const end = mem.indexOfScalar(u8, &kf.path, 0) orelse return error.NameTooLong;
+                    mem.copy(u8, out_buffer, kf.path[0..end]);
+                    return out_buffer[0..end];
+                }
+
+                if (kf.kf_structsize == 0) break;
+
+                offset += @intCast(usize, kf.kf_structsize);
+            }
+
+            return result_error;
         },
         .linux => {
             var procfs_buf: ["/proc/self/fd/-2147483648".len:0]u8 = undefined;
